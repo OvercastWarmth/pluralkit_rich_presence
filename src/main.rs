@@ -7,11 +7,22 @@
  *
 */
 
-use std::{error::Error, io::Read, process::exit};
+use std::{error::Error, process::exit, thread::sleep, time::Duration};
 
 use discord_rich_presence::{activity::Activity, DiscordIpc, DiscordIpcClient};
+
+use pluralkit_rich_presence::{
+	activity_handler::construct_activity_text,
+	pluralkit::get_fronters,
+};
+
 use reqwest::header::HeaderMap;
-use serde::Deserialize;
+
+const USER_AGENT: &str = concat!(
+	"pluralkit_rich_presence/",
+	env!("CARGO_PKG_VERSION"),
+	" (@overcastwarmth or @fnige on Discord)"
+);
 
 fn main() {
 	match run() {
@@ -23,98 +34,29 @@ fn main() {
 	}
 }
 
-#[derive(Deserialize, Debug)]
-struct PluralKitMember {
-	name: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct PluralKitSwitch {
-	members: Vec<PluralKitMember>,
-}
-
 fn run() -> Result<(), Box<dyn Error>> {
 	let mut discord_client = DiscordIpcClient::new("1173850713743446027")?; // TODO: Grab ID from config file
 	discord_client.connect()?;
-	println!("Connected to Discord RPC");
 
 	let request_client = reqwest::blocking::Client::new();
 	let mut headers = HeaderMap::new();
-	headers.append(
-		"User-Agent",
-		"pluralkit_rich_presence/1.0.0 (@overcastwarmth or @fnige on Discord)".parse()?,
-	);
+	headers.append("User-Agent", USER_AGENT.parse()?);
 	// TODO: Add ability to authorise with a PK token
 
-	let switch: PluralKitSwitch = get_fronters(request_client, headers)?;
-	println!("Found new fronter list: {:?}", switch);
+	loop {
+		let switch = get_fronters(&request_client, &headers)?;
 
-	// TODO: Customisation
-	let activity = construct_activity_text(&switch)?;
+		let activity = construct_activity_text(&switch.members)?;
 
-	println!("Constructed new activity: {:?}", activity);
+		// Match statement is a workaround for Discord seemingly refusing to display the
+		// rich presence when the state is present but empty
+		discord_client.set_activity(match &activity.1 {
+			None => Activity::new().details(activity.0.as_str()),
+			Some(state) => Activity::new()
+				.details(activity.0.as_str())
+				.state(state.as_str()),
+		})?;
 
-	discord_client.set_activity(match &activity.1 {
-		None => Activity::new().details(activity.0.as_str()),
-		Some(state) => Activity::new()
-			.details(activity.0.as_str())
-			.state(state.as_str()),
-	})?;
-
-	println!("Activity sent to Discord RPC!");
-
-	Ok(())
-}
-
-fn get_fronters(
-	request_client: reqwest::blocking::Client,
-	headers: HeaderMap,
-) -> Result<PluralKitSwitch, Box<dyn Error>> {
-	let mut res = request_client
-		.get("https://api.pluralkit.me/v2/systems/vgspl/fronters") // TODO: Unhardcode this later pls :3
-		.headers(headers)
-		.send()?;
-	let mut buf = String::new();
-	res.read_to_string(&mut buf)?;
-	Ok(serde_json::from_str(&buf)?)
-}
-
-fn construct_activity_text(
-	switch: &PluralKitSwitch,
-) -> Result<(String, Option<String>), Box<dyn Error>> {
-	let details: String;
-	let state: Option<String>;
-
-	match switch.members.len() {
-		0 => {
-			details = "No one is fronting!".to_owned();
-			state = None
-		}
-		1 => {
-			details = format!("{}", switch.members[0].name);
-			state = None
-		}
-		2 => {
-			details = format!("{}", switch.members[0].name);
-			state = Some(format!("{}", switch.members[1].name))
-		}
-		3 => {
-			details = format!("{}", switch.members[0].name);
-			state = Some(format!(
-				"{}, {}",
-				switch.members[1].name, switch.members[2].name
-			))
-		}
-		4.. => {
-			details = format!("{}", switch.members[0].name);
-			state = Some(format!(
-				"{}, {} (+ {} others)",
-				switch.members[1].name,
-				switch.members[2].name,
-				switch.members.len() - 3
-			))
-		}
-	}
-
-	Ok((details, state))
+		sleep(Duration::from_secs(10));
+	};
 }
