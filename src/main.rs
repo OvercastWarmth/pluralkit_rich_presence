@@ -9,10 +9,7 @@
 
 use std::{error::Error, io::Read, process::exit};
 
-use discord_rich_presence::{
-	activity::Activity,
-	DiscordIpc, DiscordIpcClient,
-};
+use discord_rich_presence::{activity::Activity, DiscordIpc, DiscordIpcClient};
 use reqwest::header::HeaderMap;
 use serde::Deserialize;
 
@@ -49,27 +46,20 @@ fn run() -> Result<(), Box<dyn Error>> {
 	);
 	// TODO: Add ability to authorise with a PK token
 
-	let fronters: PluralKitSwitch = get_fronters(request_client, headers)?;
-	println!("Found new fronter list: {:?}", fronters);
+	let switch: PluralKitSwitch = get_fronters(request_client, headers)?;
+	println!("Found new fronter list: {:?}", switch);
 
 	// TODO: Customisation
-	let activity = construct_activity(&fronters)?;
+	let activity = construct_activity_text(&switch)?;
 
 	println!("Constructed new activity: {:?}", activity);
 
-	match fronters.members.len() {
-		0 | 1 => discord_client.set_activity(
-			Activity::new()
-				.details(activity.0)
-		)?,
-
-		// 2 and above
-		_ => discord_client.set_activity(
-			Activity::new()
-				.details(activity.0)
-				.state(activity.1.as_str()),
-		)?,
-	}
+	discord_client.set_activity(match &activity.1 {
+		None => Activity::new().details(activity.0.as_str()),
+		Some(state) => Activity::new()
+			.details(activity.0.as_str())
+			.state(state.as_str()),
+	})?;
 
 	println!("Activity sent to Discord RPC!");
 
@@ -89,32 +79,42 @@ fn get_fronters(
 	Ok(serde_json::from_str(&buf)?)
 }
 
-fn construct_activity(fronters: &PluralKitSwitch) -> Result<(&str, String), Box<dyn Error>> {
-	let mut iter = fronters.members.iter();
-	let details: &str;
-	let mut state = String::new();
-	match iter.next() {
-		Some(fronter) => details = fronter.name.as_str(),
-		None => details = "There's no one fronting.",
-	};
-	match iter.next() {
-		Some(fronter) => {
-			state += fronter.name.as_str();
+fn construct_activity_text(
+	switch: &PluralKitSwitch,
+) -> Result<(String, Option<String>), Box<dyn Error>> {
+	let details: String;
+	let state: Option<String>;
+
+	match switch.members.len() {
+		0 => {
+			details = "No one is fronting!".to_owned();
+			state = None
 		}
-		None => (),
-	};
-	match iter.next() {
-		Some(fronter) => {
-			state = state + ", " + fronter.name.as_str();
+		1 => {
+			details = format!("{}", switch.members[0].name);
+			state = None
 		}
-		None => (),
-	};
-	match iter.next() {
-		Some(fronter) => {
-			state = state + " (+" + { iter.count() + 1 }.to_string().as_str() + " more)";
+		2 => {
+			details = format!("{}", switch.members[0].name);
+			state = Some(format!("{}", switch.members[1].name))
 		}
-		None => (),
-	};
+		3 => {
+			details = format!("{}", switch.members[0].name);
+			state = Some(format!(
+				"{}, {}",
+				switch.members[1].name, switch.members[2].name
+			))
+		}
+		4.. => {
+			details = format!("{}", switch.members[0].name);
+			state = Some(format!(
+				"{}, {} (+ {} others)",
+				switch.members[1].name,
+				switch.members[2].name,
+				switch.members.len() - 3
+			))
+		}
+	}
 
 	Ok((details, state))
 }
