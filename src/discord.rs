@@ -1,10 +1,6 @@
-use std::error::Error;
-
 use crate::pluralkit::PluralKitMember;
 
-pub fn construct_activity_text(
-	members: &Vec<PluralKitMember>,
-) -> Result<(String, Option<String>), Box<dyn Error>> {
+pub fn construct_activity_text(members: &Vec<PluralKitMember>) -> (String, Option<String>) {
 	// TODO: Customisation
 	let details: String;
 	let state: Option<String>;
@@ -37,5 +33,5 @@ pub fn construct_activity_text(
 		}
 	}
 
-	Ok((details, state))
+	(details, state)
 }

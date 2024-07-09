@@ -13,12 +13,12 @@ pub struct PluralKitSwitch {
 	pub members: Vec<PluralKitMember>,
 }
 
-pub fn get_fronters(
+pub fn get_switch(
 	request_client: &reqwest::blocking::Client,
 	headers: &HeaderMap,
 ) -> Result<PluralKitSwitch, Box<dyn Error>> {
 	let mut res = request_client
-		.get("https://api.pluralkit.me/v2/systems/vgspl/fronters") // TODO: Unhardcode this later pls :3
+		.get("https://api.pluralkit.me/v2/systems/vgspl/fronters") // TODO: Un-hardcode this later pls :3
 		.headers(headers.clone())
 		.send()?;
 	let mut buf = String::new();
